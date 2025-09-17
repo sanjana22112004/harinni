@@ -7,7 +7,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.linear_model import LogisticRegression, LinearRegression
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.metrics import accuracy_score, mean_squared_error, roc_curve, auc, confusion_matrix, r2_score
+from sklearn.metrics import accuracy_score, mean_squared_error, roc_curve, auc, confusion_matrix, r2_score, mean_absolute_error
+from sklearn.metrics import precision_recall_curve, average_precision_score, classification_report
 
 # Set page config
 st.set_page_config(page_title="ML Playground", layout="wide")
@@ -171,6 +172,113 @@ def plot_actual_vs_predicted(y_true, y_pred, model_name="Model"):
     plt.tight_layout()
     return fig
 
+def plot_regression_metrics_comparison(results, model_names):
+    """Bar chart comparing regression metrics across models"""
+    x = np.arange(len(model_names))
+    width = 0.25
+    
+    fig, ax = plt.subplots(figsize=(12, 6))
+    
+    # Calculate metrics for each model
+    rmse_values = []
+    mae_values = []
+    r2_values = []
+    
+    for model_name in model_names:
+        if 'RMSE' in results[model_name]:
+            rmse_values.append(results[model_name]['RMSE'])
+        else:
+            rmse_values.append(0)
+            
+        if 'MAE' in results[model_name]:
+            mae_values.append(results[model_name]['MAE'])
+        else:
+            mae_values.append(0)
+            
+        if 'R2' in results[model_name]:
+            r2_values.append(results[model_name]['R2'])
+        else:
+            r2_values.append(0)
+    
+    # Create bars
+    bars1 = ax.bar(x - width, rmse_values, width, label='RMSE', alpha=0.8, color='skyblue')
+    bars2 = ax.bar(x, mae_values, width, label='MAE', alpha=0.8, color='lightcoral')
+    bars3 = ax.bar(x + width, r2_values, width, label='R²', alpha=0.8, color='lightgreen')
+    
+    # Add value labels on bars
+    def add_value_labels(bars):
+        for bar in bars:
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height + 0.01,
+                   f'{height:.3f}', ha='center', va='bottom', fontsize=9)
+    
+    add_value_labels(bars1)
+    add_value_labels(bars2)
+    add_value_labels(bars3)
+    
+    ax.set_xlabel('Models', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Metric Values', fontsize=12, fontweight='bold')
+    ax.set_title('Regression Metrics Comparison', fontsize=16, fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels(model_names, rotation=45, ha='right')
+    ax.legend()
+    ax.grid(True, alpha=0.3, axis='y')
+    
+    plt.tight_layout()
+    return fig
+
+def plot_residuals_histogram(y_true, y_pred, model_name="Model"):
+    """Residuals distribution histogram for regression"""
+    residuals = y_true - y_pred
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    # Histogram of residuals
+    n, bins, patches = ax.hist(residuals, bins=30, alpha=0.7, edgecolor='black', color='skyblue')
+    
+    # Add normal distribution overlay
+    mu, sigma = residuals.mean(), residuals.std()
+    x = np.linspace(residuals.min(), residuals.max(), 100)
+    normal_curve = len(residuals) * (bins[1] - bins[0]) * (1/(sigma * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x - mu) / sigma) ** 2)
+    ax.plot(x, normal_curve, 'r-', linewidth=2, label=f'Normal (μ={mu:.3f}, σ={sigma:.3f})')
+    
+    ax.set_xlabel('Residuals', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Frequency', fontsize=12, fontweight='bold')
+    ax.set_title(f'Residuals Distribution - {model_name}', fontsize=16, fontweight='bold')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    
+    # Add statistics text
+    from scipy import stats
+    ax.text(0.02, 0.98, f'Mean: {mu:.3f}\nStd: {sigma:.3f}\nSkewness: {stats.skew(residuals):.3f}', 
+            transform=ax.transAxes, verticalalignment='top',
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8))
+    
+    plt.tight_layout()
+    return fig
+
+def plot_precision_recall_curve(y_true, y_pred_proba, model_name="Model"):
+    """Precision-Recall curve for classification"""
+    if len(np.unique(y_true)) != 2:
+        return None
+    
+    precision, recall, _ = precision_recall_curve(y_true, y_pred_proba)
+    avg_precision = average_precision_score(y_true, y_pred_proba)
+    
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.plot(recall, precision, color='darkorange', lw=2, 
+            label=f'PR curve (AP = {avg_precision:.2f})')
+    ax.set_xlim([0.0, 1.0])
+    ax.set_ylim([0.0, 1.05])
+    ax.set_xlabel('Recall', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Precision', fontsize=12, fontweight='bold')
+    ax.set_title(f'Precision-Recall Curve - {model_name}', fontsize=16, fontweight='bold')
+    ax.legend(loc="lower left")
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    return fig
+
 # Preprocessing function
 def preprocess_data(df, target_col):
     """Simple preprocessing"""
@@ -220,10 +328,14 @@ def train_and_evaluate(X_train, X_test, y_train, y_test):
             model.fit(X_train, y_train)
             preds = model.predict(X_test)
             mse = mean_squared_error(y_test, preds)
+            mae = mean_absolute_error(y_test, preds)
+            r2 = r2_score(y_test, preds)
             
             results[name] = {
                 "MSE": mse, 
                 "RMSE": np.sqrt(mse),
+                "MAE": mae,
+                "R2": r2,
                 "predictions": preds,
                 "model": model
             }
@@ -317,60 +429,193 @@ if df is not None and not df.empty:
         with tab2:
             st.header("🤖 Model Results & Evaluation")
             
-            # Model Performance Metrics
-            st.subheader("📊 Performance Metrics")
-            for model_name, metrics in results.items():
-                with st.expander(f"**{model_name}**"):
-                    if is_classification:
-                        st.metric("Accuracy", f"{metrics['accuracy']:.3f}")
-                    else:
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.metric("MSE", f"{metrics['MSE']:.3f}")
-                        with col2:
-                            st.metric("RMSE", f"{metrics['RMSE']:.3f}")
+            # Model Results - Metrics Table
+            st.subheader("📊 Model Performance Metrics")
             
-            # Model Evaluation Plots
-            st.subheader("✅ Model Evaluation Visualizations")
+            if is_classification:
+                # Classification Metrics Table
+                from sklearn.metrics import precision_score, recall_score, f1_score, roc_auc_score
+                
+                # Calculate additional metrics for classification
+                metrics_data = []
+                for model_name, metrics in results.items():
+                    preds = metrics['predictions']
+                    acc = metrics['accuracy']
+                    
+                    # Calculate precision, recall, f1 (macro average for multi-class)
+                    precision = precision_score(y_test, preds, average='macro', zero_division=0)
+                    recall = recall_score(y_test, preds, average='macro', zero_division=0)
+                    f1 = f1_score(y_test, preds, average='macro', zero_division=0)
+                    
+                    # Calculate ROC-AUC for binary classification
+                    roc_auc = None
+                    if len(np.unique(y_test)) == 2 and 'probabilities' in metrics:
+                        try:
+                            roc_auc = roc_auc_score(y_test, metrics['probabilities'][:, 1])
+                        except:
+                            roc_auc = None
+                    
+                    metrics_data.append({
+                        'Model': model_name,
+                        'Accuracy': round(acc, 3),
+                        'Precision': round(precision, 3),
+                        'Recall': round(recall, 3),
+                        'F1 Score': round(f1, 3),
+                        'ROC-AUC': round(roc_auc, 3) if roc_auc is not None else 'N/A'
+                    })
+                
+                # Find best model based on F1 score
+                best_model_name = max(metrics_data, key=lambda x: x['F1 Score'])['Model']
+                best_f1_score = max(metrics_data, key=lambda x: x['F1 Score'])['F1 Score']
+                
+                # Display classification metrics table with highlighting
+                metrics_df = pd.DataFrame(metrics_data)
+                
+                # Highlight best model row
+                def highlight_best_model(row):
+                    if row['Model'] == best_model_name:
+                        return ['background-color: #e6f3ff'] * len(row)
+                    return [''] * len(row)
+                
+                st.dataframe(metrics_df.style.apply(highlight_best_model, axis=1), use_container_width=True)
+                
+                # Best Model Announcement
+                st.subheader("🏆 Best Model Selection")
+                st.success(f"**{best_model_name}** was selected as the best model because it achieved the highest F1-score of **{best_f1_score}** compared to other models.")
+                
+                # Get best model metrics
+                best_model_metrics = results[best_model_name]
+                
+            else:
+                # Regression Metrics Table
+                metrics_data = []
+                for model_name, metrics in results.items():
+                    metrics_data.append({
+                        'Model': model_name,
+                        'R²': round(metrics['R2'], 3),
+                        'MAE': round(metrics['MAE'], 3),
+                        'MSE': round(metrics['MSE'], 3),
+                        'RMSE': round(metrics['RMSE'], 3)
+                    })
+                
+                # Find best model based on RMSE (lower is better)
+                best_model_name = min(metrics_data, key=lambda x: x['RMSE'])['Model']
+                best_rmse_score = min(metrics_data, key=lambda x: x['RMSE'])['RMSE']
+                
+                # Display regression metrics table with highlighting
+                metrics_df = pd.DataFrame(metrics_data)
+                
+                # Highlight best model row
+                def highlight_best_model(row):
+                    if row['Model'] == best_model_name:
+                        return ['background-color: #e6f3ff'] * len(row)
+                    return [''] * len(row)
+                
+                st.dataframe(metrics_df.style.apply(highlight_best_model, axis=1), use_container_width=True)
+                
+                # Best Model Announcement
+                st.subheader("🏆 Best Model Selection")
+                st.success(f"**{best_model_name}** was selected as the best model because it achieved the lowest RMSE of **{best_rmse_score}** compared to other models.")
+                
+                # Get best model metrics
+                best_model_metrics = results[best_model_name]
             
-            for model_name, metrics in results.items():
-                st.write(f"#### {model_name}")
+            # Evaluation Visualizations
+            st.subheader("📈 Detailed Analysis of Best Model")
+            
+            if is_classification:
+                # Classification Visualizations for Best Model Only
                 
-                if is_classification:
-                    # ROC Curve
-                    if 'probabilities' in metrics:
-                        roc_plot = plot_roc_curve(y_test, metrics['probabilities'][:, 1], model_name)
-                        if roc_plot:
-                            st.pyplot(roc_plot)
-                    
-                    # Confusion Matrix
-                    conf_plot = plot_confusion_matrix(y_test, metrics['predictions'], model_name)
-                    if conf_plot:
-                        st.pyplot(conf_plot)
-                    
-                    # Feature Importance (for tree-based models)
-                    if hasattr(metrics['model'], 'feature_importances_'):
-                        feat_imp_plot = plot_feature_importance(
-                            metrics['model'], X_train.columns, model_name
-                        )
-                        if feat_imp_plot:
-                            st.pyplot(feat_imp_plot)
+                # Confusion Matrix
+                st.write("#### Confusion Matrix Analysis")
+                conf_plot = plot_confusion_matrix(y_test, best_model_metrics['predictions'], best_model_name)
+                if conf_plot:
+                    st.pyplot(conf_plot)
+                    st.caption(f"*Figure 1: Confusion Matrix for {best_model_name}*")
                 
-                else:
-                    # Actual vs Predicted for regression
-                    actual_pred_plot = plot_actual_vs_predicted(
-                        y_test, metrics['predictions'], model_name
-                    )
-                    if actual_pred_plot:
-                        st.pyplot(actual_pred_plot)
+                # Confusion Matrix Explanation
+                cm = confusion_matrix(y_test, best_model_metrics['predictions'])
+                if len(cm) == 2:  # Binary classification
+                    tn, fp, fn, tp = cm.ravel()
+                    st.info(f"**Analysis:** The model correctly predicted {tp} positive cases and {tn} negative cases. It made {fp} false positive errors (predicted positive when actual was negative) and {fn} false negative errors (predicted negative when actual was positive).")
+                else:  # Multi-class
+                    st.info(f"**Analysis:** The diagonal elements show correct predictions for each class. Off-diagonal elements indicate misclassifications between different classes.")
+                
+                # ROC Curve (for binary classification)
+                if len(np.unique(y_test)) == 2 and 'probabilities' in best_model_metrics:
+                    st.write("#### ROC Curve Analysis")
+                    roc_plot = plot_roc_curve(y_test, best_model_metrics['probabilities'][:, 1], best_model_name)
+                    if roc_plot:
+                        st.pyplot(roc_plot)
+                        st.caption(f"*Figure 2: ROC Curve for {best_model_name}*")
                     
-                    # Feature Importance (for tree-based models)
-                    if hasattr(metrics['model'], 'feature_importances_'):
-                        feat_imp_plot = plot_feature_importance(
-                            metrics['model'], X_train.columns, model_name
-                        )
-                        if feat_imp_plot:
-                            st.pyplot(feat_imp_plot)
+                    # ROC Curve Explanation
+                    roc_auc = roc_auc_score(y_test, best_model_metrics['probabilities'][:, 1])
+                    st.info(f"**Analysis:** The ROC curve shows the trade-off between True Positive Rate (sensitivity) and False Positive Rate (1-specificity). An AUC of {roc_auc:.3f} indicates {'excellent' if roc_auc > 0.9 else 'good' if roc_auc > 0.8 else 'fair' if roc_auc > 0.7 else 'poor'} discriminative ability.")
+                
+                # Precision-Recall Curve
+                if 'probabilities' in best_model_metrics:
+                    st.write("#### Precision-Recall Curve Analysis")
+                    pr_plot = plot_precision_recall_curve(y_test, best_model_metrics['probabilities'][:, 1], best_model_name)
+                    if pr_plot:
+                        st.pyplot(pr_plot)
+                        st.caption(f"*Figure 3: Precision-Recall Curve for {best_model_name}*")
+                    
+                    # PR Curve Explanation
+                    precision, recall, _ = precision_recall_curve(y_test, best_model_metrics['probabilities'][:, 1])
+                    avg_precision = average_precision_score(y_test, best_model_metrics['probabilities'][:, 1])
+                    st.info(f"**Analysis:** The Precision-Recall curve shows the trade-off between precision and recall. An Average Precision of {avg_precision:.3f} indicates how well the model balances precision and recall across different thresholds.")
+            
+            else:
+                # Regression Visualizations for Best Model Only
+                
+                # Model Comparison Bar Chart
+                st.write("#### Model Performance Comparison")
+                model_names = list(results.keys())
+                metrics_comparison_plot = plot_regression_metrics_comparison(results, model_names)
+                if metrics_comparison_plot:
+                    st.pyplot(metrics_comparison_plot)
+                    st.caption("*Figure 1: Model Performance Comparison - Lower values are better for MAE, MSE, RMSE; Higher values are better for R²*")
+                
+                st.info(f"**Analysis:** This comparison clearly shows why {best_model_name} was selected as the best model, with superior performance across multiple metrics.")
+                
+                # Residuals Distribution
+                st.write("#### Residuals Distribution Analysis")
+                resid_hist_plot = plot_residuals_histogram(y_test, best_model_metrics['predictions'], best_model_name)
+                if resid_hist_plot:
+                    st.pyplot(resid_hist_plot)
+                    st.caption(f"*Figure 2: Residuals Distribution for {best_model_name}*")
+                
+                st.info("**Analysis:** Ideally, residuals should be centered around 0 with a normal distribution. This plot shows how well the model's errors are distributed - if residuals are spread evenly, errors are random, meaning the model generalizes well.")
+                
+                # Actual vs Predicted
+                st.write("#### Predicted vs Actual Values Analysis")
+                actual_pred_plot = plot_actual_vs_predicted(y_test, best_model_metrics['predictions'], best_model_name)
+                if actual_pred_plot:
+                    st.pyplot(actual_pred_plot)
+                    st.caption(f"*Figure 3: Predicted vs Actual Values for {best_model_name}*")
+                
+                st.info("**Analysis:** Points close to the diagonal line (y=x) indicate strong predictive power. The closer the points are to this line, the better the model's predictions match the actual values.")
+            
+            # Feature Importance Analysis (for tree-based models)
+            if hasattr(best_model_metrics['model'], 'feature_importances_'):
+                st.subheader("🌳 Feature Importance Analysis")
+                feat_imp_plot = plot_feature_importance(
+                    best_model_metrics['model'], X_train.columns, best_model_name
+                )
+                if feat_imp_plot:
+                    st.pyplot(feat_imp_plot)
+                    st.caption(f"*Figure 4: Feature Importance for {best_model_name}*")
+                
+                # Get top 3 most important features
+                importances = best_model_metrics['model'].feature_importances_
+                feature_names = X_train.columns
+                top_features = sorted(zip(feature_names, importances), key=lambda x: x[1], reverse=True)[:3]
+                
+                st.info(f"**Analysis:** The most important features for {best_model_name} are: {', '.join([f'{feat} ({imp:.3f})' for feat, imp in top_features])}. These features contribute most significantly to the model's decision-making process.")
+            else:
+                st.subheader("🌳 Feature Importance Analysis")
+                st.info(f"**Note:** {best_model_name} does not provide feature importance scores. This is common for linear models like Logistic Regression, where coefficients can be interpreted as feature importance.")
         
         with tab3:
             st.header("📈 Predictions")
