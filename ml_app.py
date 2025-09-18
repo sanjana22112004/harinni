@@ -1125,124 +1125,297 @@ if df is not None and not df.empty:
             if 'trained_models' in st.session_state and st.session_state['trained_models']:
                 trained_models = st.session_state['trained_models']
                 X_train = st.session_state['X_train']
+                is_classification = st.session_state.get('task_type', 'classification') == 'classification'
             
-            # Model Selection for Predictions
-            model_names = list(trained_models.keys())
-            selected_model_name = st.selectbox("Select model for predictions:", model_names)
-            selected_model = trained_models[selected_model_name]
-            
-            # Prediction Type Selection
-            pred_type = st.radio("Choose prediction type:", ["Manual Input", "Batch Upload"])
-            
-            if pred_type == "Manual Input":
-                st.subheader("🔮 Manual Predictions")
-                st.write("Enter feature values for prediction:")
+                # Model Selection for Predictions
+                model_names = list(trained_models.keys())
+                selected_model_name = st.selectbox("Select model for predictions:", model_names)
+                selected_model = trained_models[selected_model_name]
                 
-                # Create input form
-                input_data = {}
-                feature_cols = X_train.columns
+                # Prediction Type Selection
+                pred_type = st.radio("Choose prediction type:", ["Manual Input", "Batch Upload"])
                 
-                cols = st.columns(min(3, len(feature_cols)))
-                for i, col in enumerate(feature_cols):
-                    with cols[i % len(cols)]:
-                        if X_train[col].dtype in ['int64', 'float64']:
-                            # Numeric input
-                            min_val = float(X_train[col].min())
-                            max_val = float(X_train[col].max())
-                            input_data[col] = st.number_input(
-                                f"{col}", 
-                                min_value=min_val, 
-                                max_value=max_val, 
-                                value=float(X_train[col].median())
-                            )
-                        else:
-                            # Categorical input
-                            unique_vals = X_train[col].unique()
-                            input_data[col] = st.selectbox(f"{col}", unique_vals)
-                
-                if st.button("🔮 Make Prediction"):
-                    # Convert to DataFrame
-                    input_df = pd.DataFrame([input_data])
+                if pred_type == "Manual Input":
+                    st.subheader("🔮 Manual Predictions")
+                    st.write("Enter feature values for prediction:")
                     
-                    # Make prediction
-                    if is_classification:
-                        pred = selected_model.predict(input_df)[0]
-                        pred_proba = selected_model.predict_proba(input_df)[0]
+                    # Create input form
+                    input_data = {}
+                    feature_cols = X_train.columns
+                    
+                    cols = st.columns(min(3, len(feature_cols)))
+                    for i, col in enumerate(feature_cols):
+                        with cols[i % len(cols)]:
+                            if X_train[col].dtype in ['int64', 'float64']:
+                                # Numeric input
+                                min_val = float(X_train[col].min())
+                                max_val = float(X_train[col].max())
+                                input_data[col] = st.number_input(
+                                    f"{col}", 
+                                    min_value=min_val, 
+                                    max_value=max_val, 
+                                    value=float(X_train[col].median())
+                                )
+                            else:
+                                # Categorical input
+                                unique_vals = X_train[col].unique()
+                                input_data[col] = st.selectbox(f"{col}", unique_vals)
+                    
+                    if st.button("🔮 Make Prediction", type="primary"):
+                        # Convert to DataFrame
+                        input_df = pd.DataFrame([input_data])
                         
-                        st.success(f"**Prediction:** {pred}")
-                        st.write("**Class Probabilities:**")
-                        classes = selected_model.classes_
-                        for i, prob in enumerate(pred_proba):
-                            st.write(f"  {classes[i]}: {prob:.3f}")
-                    else:
-                        pred = selected_model.predict(input_df)[0]
-                        st.success(f"**Prediction:** {pred:.3f}")
-            
-            else:  # Batch Upload
-                st.subheader("📁 Batch Predictions")
-                uploaded_pred_file = st.file_uploader("Upload CSV for batch predictions", type=["csv"])
-                
-                if uploaded_pred_file is not None:
-                    pred_df = pd.read_csv(uploaded_pred_file)
-                    st.write("**Uploaded Data Preview:**")
-                    st.dataframe(pred_df.head())
-                    
-                    if st.button("🔮 Make Batch Predictions"):
-                        # Ensure same features as training data
-                        missing_cols = set(X_train.columns) - set(pred_df.columns)
-                        if missing_cols:
-                            st.error(f"Missing columns: {missing_cols}")
+                        # Make prediction
+                        if is_classification:
+                            pred = selected_model.predict(input_df)[0]
+                            pred_proba = selected_model.predict_proba(input_df)[0]
+                            classes = selected_model.classes_
+                            
+                            # Store prediction results in session state
+                            st.session_state['prediction_result'] = {
+                                'prediction': pred,
+                                'probabilities': pred_proba,
+                                'classes': classes,
+                                'model_name': selected_model_name,
+                                'input_data': input_data,
+                                'is_classification': True
+                            }
                         else:
-                            # Make predictions
-                            pred_df_subset = pred_df[X_train.columns]
-                            predictions = selected_model.predict(pred_df_subset)
+                            pred = selected_model.predict(input_df)[0]
                             
-                            # Add predictions to dataframe
-                            result_df = pred_df.copy()
-                            result_df['Prediction'] = predictions
-                            
-                            if is_classification:
-                                probabilities = selected_model.predict_proba(pred_df_subset)
-                                for i, class_name in enumerate(selected_model.classes_):
-                                    result_df[f'Probability_{class_name}'] = probabilities[:, i]
-                            
-                            st.write("**Prediction Results:**")
-                            st.dataframe(result_df)
-                            
-                            # Download results
-                            csv = result_df.to_csv(index=False)
-                            st.download_button(
-                                label="📥 Download Predictions",
-                                data=csv,
-                                file_name="predictions.csv",
-                                mime="text/csv"
-                            )
-            
-            # Prediction Visualizations
-            st.subheader("📊 Prediction Visualizations")
-            
-            if is_classification and 'probabilities' in results[selected_model_name]:
-                # Probability Distribution
-                prob_plot = plot_prediction_probabilities(
-                    results[selected_model_name]['probabilities'], selected_model_name
-                )
-                if prob_plot:
-                    st.pyplot(prob_plot)
+                            # Store prediction results in session state
+                            st.session_state['prediction_result'] = {
+                                'prediction': pred,
+                                'model_name': selected_model_name,
+                                'input_data': input_data,
+                                'is_classification': False
+                            }
                 
-                # ROC Curve for predictions
-                roc_plot = plot_roc_curve(
-                    y_test, results[selected_model_name]['probabilities'][:, 1], selected_model_name
-                )
-                if roc_plot:
-                    st.pyplot(roc_plot)
+                else:  # Batch Upload
+                    st.subheader("📁 Batch Predictions")
+                    uploaded_pred_file = st.file_uploader("Upload CSV for batch predictions", type=["csv"])
+                    
+                    if uploaded_pred_file is not None:
+                        pred_df = pd.read_csv(uploaded_pred_file)
+                        st.write("**Uploaded Data Preview:**")
+                        st.dataframe(pred_df.head())
+                        
+                        if st.button("🔮 Make Batch Predictions", type="primary"):
+                            # Ensure same features as training data
+                            missing_cols = set(X_train.columns) - set(pred_df.columns)
+                            if missing_cols:
+                                st.error(f"Missing columns: {missing_cols}")
+                            else:
+                                # Make predictions
+                                pred_df_subset = pred_df[X_train.columns]
+                                predictions = selected_model.predict(pred_df_subset)
+                                
+                                # Add predictions to dataframe
+                                result_df = pred_df.copy()
+                                result_df['Prediction'] = predictions
+                                
+                                if is_classification:
+                                    probabilities = selected_model.predict_proba(pred_df_subset)
+                                    for i, class_name in enumerate(selected_model.classes_):
+                                        result_df[f'Probability_{class_name}'] = probabilities[:, i]
+                                
+                                # Store batch results in session state
+                                st.session_state['batch_prediction_result'] = {
+                                    'results_df': result_df,
+                                    'model_name': selected_model_name,
+                                    'is_classification': is_classification,
+                                    'classes': selected_model.classes_ if is_classification else None
+                                }
+                
+                # Display Prediction Results
+                if 'prediction_result' in st.session_state:
+                    result = st.session_state['prediction_result']
+                    
+                    st.subheader("🎯 Prediction Results")
+                    
+                    # Create highlighted prediction card
+                    if result['is_classification']:
+                        # Classification Results
+                        pred = result['prediction']
+                        pred_proba = result['probabilities']
+                        classes = result['classes']
+                        
+                        # Main prediction card
+                        col1, col2 = st.columns([2, 1])
+                        with col1:
+                            st.markdown(f"""
+                            <div style="
+                                background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+                                padding: 20px;
+                                border-radius: 10px;
+                                color: white;
+                                margin: 10px 0;
+                                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                            ">
+                                <h3 style="margin: 0; color: white;">🎯 Predicted Class</h3>
+                                <h1 style="margin: 10px 0; color: white; font-size: 2.5em;">{pred}</h1>
+                                <p style="margin: 0; opacity: 0.9;">Using {result['model_name']}</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        with col2:
+                            # Confidence score
+                            max_prob = max(pred_proba)
+                            confidence_color = "green" if max_prob > 0.8 else "orange" if max_prob > 0.6 else "red"
+                            st.markdown(f"""
+                            <div style="
+                                background: {confidence_color};
+                                padding: 15px;
+                                border-radius: 10px;
+                                color: white;
+                                margin: 10px 0;
+                                text-align: center;
+                            ">
+                                <h4 style="margin: 0; color: white;">Confidence</h4>
+                                <h2 style="margin: 5px 0; color: white;">{max_prob:.1%}</h2>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        # Class Probabilities Visualization
+                        st.subheader("📊 Class Probabilities")
+                        
+                        # Create probability bar chart
+                        prob_df = pd.DataFrame({
+                            'Class': classes,
+                            'Probability': pred_proba
+                        }).sort_values('Probability', ascending=True)
+                        
+                        fig, ax = plt.subplots(figsize=(10, 6))
+                        colors = ['#ff6b6b' if x == pred else '#4ecdc4' for x in prob_df['Class']]
+                        bars = ax.barh(prob_df['Class'], prob_df['Probability'], color=colors, alpha=0.8)
+                        
+                        # Add value labels on bars
+                        for i, (bar, prob) in enumerate(zip(bars, prob_df['Probability'])):
+                            ax.text(bar.get_width() + 0.01, bar.get_y() + bar.get_height()/2, 
+                                   f'{prob:.3f}', va='center', fontweight='bold')
+                        
+                        ax.set_xlabel('Probability', fontsize=12, fontweight='bold')
+                        ax.set_ylabel('Class', fontsize=12, fontweight='bold')
+                        ax.set_title(f'Class Probabilities - {result["model_name"]}', fontsize=14, fontweight='bold')
+                        ax.set_xlim(0, 1)
+                        ax.grid(True, alpha=0.3, axis='x')
+                        
+                        plt.tight_layout()
+                        st.pyplot(fig)
+                        
+                        # Detailed probability table
+                        st.subheader("📋 Detailed Probabilities")
+                        prob_table = pd.DataFrame({
+                            'Class': classes,
+                            'Probability': pred_proba,
+                            'Percentage': [f"{p:.1%}" for p in pred_proba]
+                        }).sort_values('Probability', ascending=False)
+                        st.dataframe(prob_table, use_container_width=True)
+                        
+                    else:
+                        # Regression Results
+                        pred = result['prediction']
+                        
+                        # Main prediction card
+                        st.markdown(f"""
+                        <div style="
+                            background: linear-gradient(90deg, #11998e 0%, #38ef7d 100%);
+                            padding: 25px;
+                            border-radius: 15px;
+                            color: white;
+                            margin: 15px 0;
+                            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+                            text-align: center;
+                        ">
+                            <h3 style="margin: 0; color: white;">🎯 Predicted Value</h3>
+                            <h1 style="margin: 15px 0; color: white; font-size: 3em; font-weight: bold;">{pred:.3f}</h1>
+                            <p style="margin: 0; opacity: 0.9; font-size: 1.1em;">Using {result['model_name']}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # Description for regression
+                        st.subheader("📝 Prediction Description")
+                        st.info(f"""
+                        **Model Prediction:** The {result['model_name']} model predicts a value of **{pred:.3f}** for the given input features.
+                        
+                        This prediction is based on the patterns learned from the training data. The model has analyzed the relationships between your input features and the target variable to make this estimate.
+                        """)
+                
+                # Display Batch Prediction Results
+                if 'batch_prediction_result' in st.session_state:
+                    batch_result = st.session_state['batch_prediction_result']
+                    
+                    st.subheader("📊 Batch Prediction Results")
+                    
+                    # Summary statistics
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Total Predictions", len(batch_result['results_df']))
+                    with col2:
+                        if batch_result['is_classification']:
+                            unique_preds = batch_result['results_df']['Prediction'].nunique()
+                            st.metric("Unique Classes", unique_preds)
+                        else:
+                            mean_pred = batch_result['results_df']['Prediction'].mean()
+                            st.metric("Average Prediction", f"{mean_pred:.3f}")
+                    with col3:
+                        if batch_result['is_classification']:
+                            most_common = batch_result['results_df']['Prediction'].mode()[0]
+                            st.metric("Most Common Class", most_common)
+                        else:
+                            std_pred = batch_result['results_df']['Prediction'].std()
+                            st.metric("Std Deviation", f"{std_pred:.3f}")
+                    
+                    # Results table
+                    st.subheader("📋 Detailed Results")
+                    st.dataframe(batch_result['results_df'], use_container_width=True)
+                    
+                    # Download results
+                    csv = batch_result['results_df'].to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download All Predictions",
+                        data=csv,
+                        file_name=f"batch_predictions_{batch_result['model_name'].replace(' ', '_')}.csv",
+                        mime="text/csv",
+                        type="primary"
+                    )
+                    
+                    # Batch prediction visualizations
+                    if batch_result['is_classification']:
+                        # Class distribution
+                        st.subheader("📊 Prediction Distribution")
+                        class_counts = batch_result['results_df']['Prediction'].value_counts()
+                        fig, ax = plt.subplots(figsize=(10, 6))
+                        bars = ax.bar(class_counts.index.astype(str), class_counts.values, 
+                                    color='skyblue', alpha=0.8, edgecolor='black')
+                        ax.set_xlabel('Predicted Class', fontsize=12, fontweight='bold')
+                        ax.set_ylabel('Count', fontsize=12, fontweight='bold')
+                        ax.set_title('Distribution of Predicted Classes', fontsize=14, fontweight='bold')
+                        
+                        # Add value labels on bars
+                        for bar in bars:
+                            height = bar.get_height()
+                            ax.text(bar.get_x() + bar.get_width()/2., height + 0.1,
+                                   f'{int(height)}', ha='center', va='bottom', fontweight='bold')
+                        
+                        plt.xticks(rotation=45)
+                        plt.tight_layout()
+                        st.pyplot(fig)
+                    else:
+                        # Prediction distribution histogram
+                        st.subheader("📊 Prediction Distribution")
+                        fig, ax = plt.subplots(figsize=(10, 6))
+                        ax.hist(batch_result['results_df']['Prediction'], bins=20, 
+                               color='lightgreen', alpha=0.7, edgecolor='black')
+                        ax.set_xlabel('Predicted Value', fontsize=12, fontweight='bold')
+                        ax.set_ylabel('Frequency', fontsize=12, fontweight='bold')
+                        ax.set_title('Distribution of Predicted Values', fontsize=14, fontweight='bold')
+                        ax.grid(True, alpha=0.3)
+                        plt.tight_layout()
+                        st.pyplot(fig)
             
             else:
-                # Actual vs Predicted for regression
-                actual_pred_plot = plot_actual_vs_predicted(
-                    y_test, results[selected_model_name]['predictions'], selected_model_name
-                )
-                if actual_pred_plot:
-                    st.pyplot(actual_pred_plot)
+                st.info("👆 Please train models first to make predictions!")
         
         with tab4:
             st.header("ℹ️ Dataset Information")
