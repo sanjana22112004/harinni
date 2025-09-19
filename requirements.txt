@@ -5,4 +5,5 @@ scikit-learn
 openml
 matplotlib
 seaborn
+datasets
 
