@@ -1,8 +1,10 @@
+import streamlit as st
 from sklearn.linear_model import LogisticRegression, LinearRegression
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.metrics import accuracy_score, mean_squared_error, mean_absolute_error, r2_score
 import numpy as np
 
+@st.cache_resource
 def train_and_evaluate(X_train, X_test, y_train, y_test):
     results = {}
     trained_models = {}
@@ -48,5 +50,5 @@ def train_and_evaluate(X_train, X_test, y_train, y_test):
                 "model": model
             }
             trained_models[name] = model
-    
+            
     return results, trained_models
